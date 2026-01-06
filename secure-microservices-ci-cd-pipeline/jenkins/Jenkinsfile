@@ -1,0 +1,89 @@
+pipeline {
+  agent any
+
+  environment {
+    AWS_ACCOUNT_ID = credentials('aws-account-id')
+    AWS_REGION = 'us-west-2'
+    IMAGE_REPO_NAME = 'myservice'
+    IMAGE = "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${IMAGE_REPO_NAME}:${env.BUILD_NUMBER}"
+    SONARQUBE = "SonarQube"
+  }
+
+  stages {
+    stage('Checkout') {
+      steps {
+        git url: 'https://github.com/org/myservice.git'
+      }
+    }
+
+    stage('Build') {
+      steps {
+        sh 'mvn clean package -DskipTests'
+      }
+    }
+
+    stage('Static Code Analysis') {
+      steps {
+        withSonarQubeEnv("${SONARQUBE}") {
+          sh 'mvn sonar:sonar'
+        }
+      }
+    }
+
+    stage('Unit Tests') {
+      steps {
+        sh 'mvn test'
+        junit 'target/surefire-reports/*.xml'
+      }
+    }
+
+    stage('Docker Build & Trivy Scan') {
+      steps {
+        script {
+          sh "aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
+          sh "docker build -t ${IMAGE} ."
+          sh "./jenkins/trivy-scan.sh ${IMAGE}"
+          sh "docker push ${IMAGE}"
+        }
+      }
+    }
+
+    stage('CIS Benchmark Scan') {
+      steps {
+        sh '''
+          echo "[CIS Scan] Running kube-bench on worker nodes..."
+          mkdir -p reports
+          kube-bench run --config-dir ./kube-bench/cfg --config ./kube-bench/config.yaml --json > reports/cis-benchmark-report.json
+          echo "[Metrics] Exposing CIS metrics to Prometheus via pushgateway"
+          ./scripts/convert-cis-report-to-prometheus.sh reports/cis-benchmark-report.json | curl --data-binary @- http://prometheus-pushgateway.monitoring:9091/metrics/job/cis_scan
+        '''
+      }
+    }
+
+    stage('Push Helm Chart Update') {
+      steps {
+        sh '''
+          helm dependency update ./helm-chart/myservice
+          helm package ./helm-chart/myservice
+          mv myservice-*.tgz ./argocd/
+          git add ./argocd/
+          git commit -m "Update Helm chart to ${BUILD_NUMBER}"
+          git push
+        '''
+      }
+    }
+  }
+
+  post {
+    always {
+      archiveArtifacts artifacts: '**/target/*.jar', fingerprint: true
+      archiveArtifacts artifacts: 'reports/*.json', fingerprint: true
+    }
+    success {
+      echo 'CI completed successfully!'
+    }
+    failure {
+      echo 'Build failed!'
+    }
+  }
+}

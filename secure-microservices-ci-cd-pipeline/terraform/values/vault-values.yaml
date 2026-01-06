@@ -1,0 +1,67 @@
+global:
+  enabled: true
+
+server:
+  ha:
+    enabled: true
+    replicas: 3
+    raft:
+      enabled: true
+      setNodeId: true
+      config: |
+        ui = true
+
+        listener "tcp" {
+          address     = "[::]:8200"
+          cluster_address = "[::]:8201"
+          tls_disable = 1
+        }
+
+        storage "raft" {
+          path    = "/vault/data"
+          node_id = "node1"
+        }
+
+        api_addr = "http://vault.vault.svc.cluster.local:8200"
+        cluster_addr = "http://vault.vault.svc.cluster.local:8201"
+
+        disable_mlock = true
+
+  dataStorage:
+    enabled: true
+    size: 10Gi
+    storageClass: "gp2"
+
+  readinessProbe:
+    enabled: true
+  livenessProbe:
+    enabled: true
+
+  affinity: {}
+  tolerations: []
+
+  resources:
+    requests:
+      cpu: "250m"
+      memory: "512Mi"
+    limits:
+      cpu: "500m"
+      memory: "1Gi"
+
+injector:
+  enabled: true
+  externalVaultAddr: ""
+  logLevel: "info"
+
+ui:
+  enabled: true
+  serviceType: "ClusterIP"
+
+injectorWebhook:
+  resources:
+    limits:
+      cpu: 100m
+      memory: 128Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi

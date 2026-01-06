@@ -1,0 +1,20 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: myservice
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: 'https://github.com/org/secure-microservices-ci-cd-pipeline.git'
+    targetRevision: HEAD
+    path: helm-chart/myservice
+  destination:
+    server: 'https://kubernetes.default.svc'
+    namespace: myservice
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    retry:
+      limit: 5

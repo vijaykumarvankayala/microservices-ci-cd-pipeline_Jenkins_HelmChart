@@ -1,0 +1,7 @@
+falco:
+  jsonOutput: true
+  fileOutput:
+    enabled: false
+  httpOutput:
+    enabled: true
+    url: "http://falcosidekick:2801"
